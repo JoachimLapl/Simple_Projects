@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <style>
+        html,
+        body,
+        svg {
+            height: 100%;
+            width: 100%;
+            margin: 0;
+            overflow: hidden;
+        }
+    </style>
+</head>
+
+<body>
+    <svg viewBox="-50 -50 100 100">
+        <path fill="#00f"/>
+        <g id="ballholder" />
+        <path d="M -150,-150 V 150 H 150 V -150 M -50,-50 H 50 V 50 H -50 z" fill="#fff" stroke="#000"
+            stroke-width=".2" />
+    </svg>
+    <script>
+        const $ = (s, p = document.body) => p.querySelector(s);
+        const svg = $('svg');
+        const rand = (a, b) => Math.random() * (b - a) + a;
+        class Vector {
+            constructor(...values) {
+                for (let i in values) this[i] = values[i];
+                this.length = values.length;
+            }
+            add(...v) { for (let i = 0; i < this.length; i++) this[i] += v.map(e => e[i]).reduce((s, p) => s + p); return this; }
+            subtract(...v) { for (let i = 0; i < this.length; i++) this[i] -= v.map(e => e[i]).reduce((s, p) => s + p); return this; }
+            multiply(n) { for (let i = 0; i < this.length; i++) this[i] *= n; return this; }
+            scalar(v) { return this.array.map((e, i) => e * v[i]).reduce((s, p) => s + p); }
+            map(callback) { for (let i = 0; i < this.length; i++) this[i] = callback(this[i], i); return this; }
+            setValue(v) { return this.map((e, i) => v[i]); };
+            rotate(v) { const [a, b] = typeof v === "number" ? [Math.cos(v), Math.sin(v)] : v; return this.setValue([this[0] * a - this[1] * b, this[0] * b + this[1] * a]); }
+            isOpposite(v) { return this.scalar(v) < 0; }
+            get norm() { return Math.hypot(...this.array); }
+            set norm(n) { const N = this.norm; if (N === 0) return this; return this.multiply(n / N); }
+            get array() { return [...this]; }
+            get clone() { return new Vector(...this); }
+            get orthogonal() { return new Vector(-this[1], this[0]); }
+            get opposite() { return new Vector(-this[0], -this[1]); }
+            get angle() { const n = this.norm; return n ? Math.acos(this[0] / n) * Math.sign(this[1]) : 0; }
+            [Symbol.iterator]() { var index = 0; const data = this; return { next: () => ({ value: data[index++], done: index - 1 === data.length }) }; }
+            valueOf() { return this.array.join(','); }
+            static Det(v1, v2) { return v1[0] * v2[1] - v1[1] * v2[0] }
+            static orient(a) { return new Vector(Math.cos(a), Math.sin(a)); }
+            get x() { return this[0]; }
+            get y() { return this[1]; }
+            set x(v) { return this[0] = v; }
+            set y(v) { return this[1] = v; }
+        }
+        class Ball {
+            static instances = [];
+            static holder = $('#ballholder', svg);
+            constructor(x, y, r) {
+                Ball.holder.insertAdjacentHTML('beforeend', `<g id="newball"><circle r="${r - .05}" fill="#00f2" stroke="#00f" stroke-width=".1"/></g>`)
+                this.element = $('#newball', Ball.holder);
+                this.element.removeAttribute('id');
+                this.position = new Vector(x, y);
+                this.r = r;
+                this.speed = new Vector(0, 0);
+                Ball.instances.push(this)
+            }
+            changeSVG() {
+                this.element.style.transform = `translate(${this.position.clone.map(e => e + 'px').valueOf()})`
+            }
+            update() {
+                this.position.add(this.speed);
+                this.changeSVG();
+                this.speed.multiply(.99);
+                if ((this.position.x <= -50 + this.r && this.speed.x < 0) || (this.position.x >= 50 - this.r && this.speed.x > 0)) this.speed.x *= -1;
+                if ((this.position.y <= -50 + this.r && this.speed.y < 0) || (this.position.y >= 50 - this.r && this.speed.y > 0)) this.speed.y *= -1;
+            }
+            collide(orient) {
+                const v = this.position.clone.subtract(position);
+                if (v.norm > r + this.r) return;
+                v.norm = 1;
+                v.norm = Math.max(v.scalar(orient.clone.multiply(speed).subtract(this.speed)), 0);
+                this.speed.add(v);
+            }
+            static ball_collision(b1, b2) {
+                const v = b2.position.clone.subtract(b1.position);
+                if (v.norm > b1.r + b2.r) return;
+                v.norm = 1;
+                const a = v.clone.opposite;
+                v.norm = Math.max(v.scalar(b1.speed.clone.subtract(b2.speed)), 0);
+                a.norm = Math.max(a.scalar(b2.speed.clone.subtract(b1.speed)), 0);
+                b1.speed.add(a);
+                b2.speed.add(v);
+            }
+            static collisions() {
+                for (let i = 0; i < Ball.instances.length; i++) {
+                    for (let j = i + 1; j < Ball.instances.length; j++) {
+                        Ball.ball_collision(Ball.instances[i], Ball.instances[j]);
+                    }
+                }
+            }
+            static update() {
+                Ball.instances.forEach(ball => ball.update());
+            }
+            static collide(orient) {
+                Ball.instances.forEach(ball => ball.collide(orient));
+            }
+            static meanPosition(origin) {
+                const v = new Vector(0, 0)
+                var d = 0;
+                Ball.instances.forEach(ball => {
+                    const n = Math.exp(-((ball.position.clone.subtract(origin).norm / 25) ** 2)) * ball.r ** 2;
+                    v.add(ball.position.clone.multiply(n))
+                    d += n;
+                });
+                return v.multiply(1 / d);
+            }
+        }
+    </script>
+    <script>
+        const path = $('path', svg);
+        for (let i = 0; i < 70; i++) {
+            new Ball(rand(-50, 50), rand(-50, 50), rand(1, 2));
+        }
+        const data = [new Vector(3, 0), new Vector(-2, -2), new Vector(-2, 2)];
+        var rotate = 0;
+        var position = new Vector(0, 0);
+        var speed = 0;
+        var rotate_speed = 0;
+        const acceleration_d = .05;
+        const acceleration_r = .0075;
+        const r = 3;
+
+        const keysdown = {};
+        onkeydown = ({ key }) => keysdown[key] = true;
+        onkeyup = ({ key }) => keysdown[key] = false;
+
+        function reloadorient(orient) {
+            path.setAttribute('d', `M ${data.map(e => e.clone.rotate(orient).add(position).valueOf()).join(' ')} z`)
+        }
+
+        function update() {
+            requestAnimationFrame(update)
+            speed += acceleration_d;
+            const p = Ball.meanPosition(position);
+            var Delta = p.clone.subtract(position).angle - rotate;
+            if (Delta < -Math.PI) Delta += 2 * Math.PI;
+            if (Delta > Math.PI) Delta -= 2 * Math.PI;
+            rotate_speed += Math.tanh(Delta * 180 / acceleration_r) * acceleration_r;
+            rotate += rotate_speed;
+            const orient = Vector.orient(rotate);
+            position.add(orient.clone.multiply(speed));
+            if (position.x <= -50 + r) position.x = -50 + r;
+            if (position.x >= 50 - r) position.x = 50 - r;
+            if (position.y <= -50 + r) position.y = -50 + r;
+            if (position.y >= 50 - r) position.y = 50 - r;
+            reloadorient(orient);
+            Ball.collide(orient);
+            Ball.collisions();
+            Ball.update();
+            rotate_speed *= .9;
+            speed *= .9;
+        }
+        update()
+    </script>
+</body>
+
+</html>
