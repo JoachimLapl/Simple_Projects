@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Démineur Infini</title>
+    <style>
+        html,
+        body,
+        svg {
+            height: 100%;
+            width: 100%;
+            margin: 0;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        text {
+            text-anchor: middle;
+            dominant-baseline: middle;
+            font-size: 1.5px;
+        }
+
+        rect {
+            stroke: #000;
+            stroke-width: .1px;
+            fill: #070;
+            cursor: pointer
+        }
+    </style>
+</head>
+
+<body>
+    <svg viewBox="0 0 100 100">
+        <g id="tile_holder" />
+    </svg>
+    <script>
+        class Vector {
+            constructor(...values) {
+                for (let i in values) this[i] = values[i];
+                this.length = values.length;
+            }
+            add(...v) { for (let i = 0; i < this.length; i++) this[i] += v.map(e => e[i]).reduce((s, p) => s + p); return this; }
+            subtract(...v) { for (let i = 0; i < this.length; i++) this[i] -= v.map(e => e[i]).reduce((s, p) => s + p); return this; }
+            multiply(n) { for (let i = 0; i < this.length; i++) this[i] *= n; return this; }
+            scalar(v) { return this.array.map((e, i) => e * v[i]).reduce((s, p) => s + p); }
+            map(callback) { for (let i = 0; i < this.length; i++) this[i] = callback(this[i], i); return this; }
+            setValue(v) { return this.map((e, i) => v[i]); };
+            rotate(v) { const [a, b] = typeof v === "number" ? [Math.cos(v), Math.sin(v)] : v; return this.setValue([this[0] * a - this[1] * b, this[0] * b + this[1] * a]); }
+            isOpposite(v) { return this.scalar(v) < 0; }
+            get norm() { return Math.hypot(...this.array); }
+            set norm(n) { const N = this.norm; if (N === 0) return this; return this.multiply(n / N); }
+            get array() { return [...this]; }
+            get clone() { return new Vector(...this); }
+            get orthogonal() { return new Vector(-this[1], this[0]); }
+            get opposite() { return new Vector(-this[0], -this[1]); }
+            get angle() { const n = this.norm; return n ? Math.acos(this[0] / n) * Math.sign(this[1]) : 0; }
+            [Symbol.iterator]() { var index = 0; const data = this; return { next: () => ({ value: data[index++], done: index - 1 === data.length }) }; }
+            valueOf() { return this.array.join(','); }
+            static Det(v1, v2) { return v1[0] * v2[1] - v1[1] * v2[0] }
+            static orient(a) { return new Vector(Math.cos(a), Math.sin(a)); }
+            get x() { return this[0]; }
+            get y() { return this[1]; }
+            set x(v) { return this[0] = v; }
+            set y(v) { return this[1] = v; }
+        }
+        Object.defineProperties(HTMLCollection.prototype, {
+            last: {
+                get: function () {
+                    return this[this.length - 1];
+                }
+            }
+        })
+    </script>
+    <script>
+        const $ = (s, p = document.body) => p.querySelector(s);
+        const svg = $('svg')
+
+        class Tile {
+            static size = 3;
+            static holder = $('#tile_holder', svg);
+            constructor(i, j, b = false) {
+                this.x = i;
+                this.y = j;
+                this.bomb = b;
+                Tile.holder.insertAdjacentHTML('beforeend', `<rect x="${i * Tile.size}" y="${j * Tile.size}" width="${Tile.size}" height="${Tile.size}" />`);
+                this.element = Tile.holder.children.last;
+                this.number = 0;
+                this.opened = false;
+            }
+            open() {
+                this.opened = true;
+                this.element.style.fill = this.bomb ? '#f00' : '#c70';
+                if (!this.bomb) {
+                    Tile.holder.insertAdjacentHTML('beforeend', `<text x="${(this.x + .5) * Tile.size}" y="${(this.y + .5) * Tile.size}">${this.number}</text>`);
+                    this.text_element = Tile.holder.children.last;
+                }
+            }
+            mouseover() {
+                if (!this.opened) {
+                    this.element.style.fill = "#0a0";
+                }
+            }
+            mouseout() {
+                if (!this.opened) {
+                    this.element.style.fill = "#070";
+                }
+            }
+        }
+
+        class Table {
+            constructor(w, h, proba) {
+                for (let i = -1; i < h + 1; i++) {
+                    this[i] = [];
+                    for (let j = -1; j < w + 1; j++) {
+                        this[i][j] = new Tile(j, i, Math.random() < proba)
+                    }
+                }
+                this.range = [[-1, w + 1], [-1, h + 1]];
+                this.origin = new Vector(0, 0);
+                this.prob = proba;
+            }
+            [Symbol.iterator]() { var index = 0; const data = this; return { next: () => ({ value: data[index++], done: index - 1 === data.length }) }; }
+            forEach(fn) {
+                for (let i = this.range[1][0]; i < this.range[1][1]; i++)
+                    for (let j = this.range[0][0]; j < this.range[0][1]; j++)
+                        fn(this[i][j], i, j);
+            }
+            calculate() {
+                this.forEach(t => {
+                    t.number = 0;
+                    for (let i = Math.max(this.range[1][0], t.y - 1); i < Math.min(this.range[1][1], t.y + 2); i++) {
+                        for (let j = Math.max(this.range[0][0], t.x - 1); j < Math.min(this.range[0][1], t.x + 2); j++) {
+                            t.number += this[i]?.[j]?.bomb || 0;
+                        }
+                    }
+                })
+            }
+            update() {
+                if (this.origin.x > -(this.range[0][0] + 1) * Tile.size) this.origin.x = -(this.range[0][0] + 1) * Tile.size;
+                if (this.origin.x < svg.viewBox.animVal.width - (this.range[0][1] - 1) * Tile.size) this.origin.x = svg.viewBox.animVal.width - (this.range[0][1] - 1) * Tile.size;
+                if (this.origin.y > -(this.range[1][0] + 1) * Tile.size) this.origin.y = -(this.range[1][0] + 1) * Tile.size;
+                if (this.origin.y < svg.viewBox.animVal.height - (this.range[1][1] - 1) * Tile.size) this.origin.y = svg.viewBox.animVal.height - (this.range[1][1] - 1) * Tile.size;
+                [svg.viewBox.baseVal.x, svg.viewBox.baseVal.y] = this.origin.opposite;
+            }
+            addUp() {
+                this.range[1][0] -= 1
+                this[this.range[1][0]] = [];
+                for (let i = this.range[0][0]; i < this.range[0][1]; i++) {
+                    this[this.range[1][0]][i] = new Tile(i, this.range[1][0], Math.random() < this.prob);
+                }
+                for (let i = this.range[0][0] + 1; i < this.range[0][1] - 1; i++) {
+                    this[this.range[1][0] + 1][i].number = 0
+                    for (let j = this.range[1][0]; j < this.range[1][0] + 3; j++) {
+                        for (let k = i - 1; k < i + 2; k++) {
+                            this[this.range[1][0] + 1][i].number += table[j][k].bomb;
+                        }
+                    }
+                }
+            }
+            addDown() {
+                this[this.range[1][1]] = [];
+                for (let i = this.range[0][0]; i < this.range[0][1]; i++) {
+                    this[this.range[1][1]][i] = new Tile(i, this.range[1][1], Math.random() < this.prob);
+                }
+                this.range[1][1] += 1
+                for (let i = this.range[0][0] + 1; i < this.range[0][1] - 1; i++) {
+                    this[this.range[1][1] - 2][i].number = 0
+                    for (let j = this.range[1][1] - 3; j < this.range[1][1]; j++) {
+                        for (let k = i - 1; k < i + 2; k++) {
+                            this[this.range[1][1] - 2][i].number += table[j][k].bomb;
+                        }
+                    }
+                }
+            }
+            addLeft() {
+                this.range[0][0] -= 1
+                this[this.range[0][0]] = [];
+                for (let i = this.range[1][0]; i < this.range[1][1]; i++) {
+                    this[i][this.range[0][0]] = new Tile(this.range[0][0], i, Math.random() < this.prob);
+                }
+                for (let i = this.range[1][0] + 1; i < this.range[1][1] - 1; i++) {
+                    this[i][this.range[0][0] + 1].number = 0
+                    for (let j = i - 1; j < i + 2; j++) {
+                        for (let k = this.range[0][0]; k < this.range[0][0] + 3; k++) {
+                            console.log(j,k, this.range[0][0], this.range[0][1], this.range[1][0], this.range[1][1], table[j], table[j][i])
+                            this[i][this.range[0][0] + 1].number += table[j][k].bomb;
+                        }
+                    }
+                }
+            }
+            addRight() {
+                this[this.range[0][1]] = [];
+                for (let i = this.range[1][0]; i < this.range[1][1]; i++) {
+                    this[i][this.range[0][1]] = new Tile(this.range[0][1], i, Math.random() < this.prob);
+                }
+                this.range[0][1] += 1
+                for (let i = this.range[1][0] + 1; i < this.range[1][1] - 1; i++) {
+                    this[i][this.range[0][1] - 2].number = 0
+                    for (let j = i - 1; j < i + 2; j++) {
+                        for (let k = this.range[0][1] - 3; k < this.range[0][1]; k++) {
+                            this[i][this.range[0][1] - 2].number += table[j][k].bomb;
+                        }
+                    }
+                }
+            }
+            open(x, y) {
+                console.log(x, y)
+                const tile = this[y][x];
+                if (!tile.opened) {
+                    if (x < this.range[0][0] + 2) this.addLeft();
+                    if (x > this.range[0][1] - 3) this.addRight();
+                    if (y < this.range[1][0] + 2) this.addUp();
+                    if (y > this.range[1][1] - 3) this.addDown();
+                    tile.open();
+                    if (tile.number === 0) {
+                        for (let i = Math.max(this.range[1][0], y - 1); i < Math.min(this.range[1][1], y + 2); i++) {
+                            for (let j = Math.max(this.range[0][0], x - 1); j < Math.min(this.range[0][1], x + 2); j++) {
+                                requestAnimationFrame(function () { table.open(this.j, this.i) }.bind({ i: i, j: j }));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        const table = new Table(40, 30, .15);
+        table.calculate();
+
+        onwheel = e => { table.origin.subtract(new Vector(e.deltaX, e.deltaY).multiply(.2)); table.update(); }
+        var max = innerWidth;
+        onresize = onload = () => {
+            max = Math.max(innerHeight, innerWidth);
+            svg.viewBox.baseVal.width = 100 * innerWidth / max;
+            svg.viewBox.baseVal.height = 100 * innerHeight / max;
+        }
+        var v = new Vector(0, 0)
+        onmousemove = ({ x, y }) => {
+            table[v.y][v.x].mouseout();
+            v = new Vector(x, y).multiply(100 / max).subtract(table.origin).multiply(1 / Tile.size).map(e => Math.floor(e));
+            table[v.y][v.x].mouseover();
+        }
+        onmousedown = ({ x, y }) => {
+            table[v.y][v.x].mouseout();
+            v = new Vector(x, y).multiply(100 / max).subtract(table.origin).multiply(1 / Tile.size).map(e => Math.floor(e));
+            table[v.y][v.x].mouseover();
+            table.open(...v);
+        }
+    </script>
+</body>
+
+</html>
