@@ -30,6 +30,8 @@
             cursor: pointer
         }
     </style>
+    <link rel="apple-touch-icon" href="flag.svg">
+    <link rel="icon" size="192x192" href="flag.svg">
 </head>
 
 <body>
@@ -89,6 +91,7 @@
                 this.element = Tile.holder.children.last;
                 this.number = 0;
                 this.opened = false;
+                this.flagged = false;
             }
             open() {
                 this.opened = true;
@@ -106,6 +109,16 @@
             mouseout() {
                 if (!this.opened) {
                     this.element.style.fill = "#070";
+                }
+            }
+            flag() {
+                if (this.flagged){
+                    this.flagged = false;
+                    this.flag_element.remove();
+                } else {
+                    this.flagged = true;
+                    Tile.holder.insertAdjacentHTML('beforeend', `<image href="flag.svg" x="${(this.x + .15) * Tile.size}" y="${(this.y + .15) * Tile.size}" width="${Tile.size*.7}" height="${Tile.size*.7}"/>`);
+                    this.text_element = Tile.holder.children.last;
                 }
             }
         }
@@ -207,9 +220,9 @@
                 }
             }
             open(x, y) {
-                console.log(x, y)
+                // console.log(x, y)
                 const tile = this[y][x];
-                if (!tile.opened) {
+                if (!tile.opened && !tile.flagged) {
                     if (x < this.range[0][0] + 2) this.addLeft();
                     if (x > this.range[0][1] - 3) this.addRight();
                     if (y < this.range[1][0] + 2) this.addUp();
@@ -242,11 +255,21 @@
             v = new Vector(x, y).multiply(100 / max).subtract(table.origin).multiply(1 / Tile.size).map(e => Math.floor(e));
             table[v.y][v.x].mouseover();
         }
-        onmousedown = ({ x, y }) => {
+        onmousedown = e => {
+            console.log(e)
             table[v.y][v.x].mouseout();
-            v = new Vector(x, y).multiply(100 / max).subtract(table.origin).multiply(1 / Tile.size).map(e => Math.floor(e));
+            v = new Vector(e.x, e.y).multiply(100 / max).subtract(table.origin).multiply(1 / Tile.size).map(e => Math.floor(e));
             table[v.y][v.x].mouseover();
-            table.open(...v);
+            if (e.button !== 2) {
+                table.open(...v);
+            }
+        }
+        oncontextmenu = e => {
+            e.preventDefault();
+            table[v.y][v.x].mouseout();
+            v = new Vector(e.x, e.y).multiply(100 / max).subtract(table.origin).multiply(1 / Tile.size).map(e => Math.floor(e));
+            table[v.y][v.x].mouseover();
+            table[v.y][v.x].flag();
         }
     </script>
 </body>
